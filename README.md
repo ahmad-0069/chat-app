@@ -23,7 +23,7 @@ npm install
 ```bash
 npm start
 ```
-2. Open your browser and navigate to `http://localhost:3000`
+2. Open your browser and navigate to `http://localhost:3002`
 3. Open multiple browser windows to test the chat functionality
 
 ## How it Works

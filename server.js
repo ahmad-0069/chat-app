@@ -9,6 +9,8 @@ app.use(express.json());
 
 // Store active sessions
 const activeSessions = new Map();
+// Store typing users
+const typingUsers = new Set();
 
 // Serve static files from public directory
 app.use(express.static('public'));
@@ -99,7 +101,9 @@ io.on('connection', async (socket) => {
             const messageData = {
                 username: socket.username,
                 message: msg.trim(),
-                timestamp: new Date().toISOString()
+                timestamp: new Date().toISOString(),
+                seen: false,
+                messageId: Date.now().toString() // Add unique message ID
             };
 
             try {
@@ -115,6 +119,34 @@ io.on('connection', async (socket) => {
         }
     });
 
+    // Handle message seen
+    socket.on('message seen', (messageId) => {
+        if (socket.username) {
+            io.emit('message seen', {
+                messageId: messageId,
+                seenBy: socket.username,
+                timestamp: new Date().toISOString()
+            });
+        }
+    });
+
+    // Handle typing indicator
+    socket.on('typing', (isTyping) => {
+        if (socket.username) {
+            if (isTyping) {
+                typingUsers.add(socket.username);
+            } else {
+                typingUsers.delete(socket.username);
+            }
+            // Broadcast typing status to all clients except sender
+            socket.broadcast.emit('typing status', {
+                username: socket.username,
+                isTyping: isTyping,
+                typingUsers: Array.from(typingUsers)
+            });
+        }
+    });
+
     // Handle disconnection
     socket.on('disconnect', () => {
         if (socket.username) {
@@ -122,8 +154,16 @@ io.on('connection', async (socket) => {
             if (activeSessions.get(socket.username)?.id === socket.id) {
                 activeSessions.delete(socket.username);
             }
+            // Remove from typing users
+            typingUsers.delete(socket.username);
             // Notify everyone that a user has left
             io.emit('user left', socket.username);
+            // Update typing status for remaining users
+            socket.broadcast.emit('typing status', {
+                username: socket.username,
+                isTyping: false,
+                typingUsers: Array.from(typingUsers)
+            });
             console.log(`User ${socket.username} disconnected`);
         }
     });
