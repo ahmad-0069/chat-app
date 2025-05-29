@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Socket.IO Chat</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 20px;
+            font-family: Arial, sans-serif;
+        }
+        #login-container {
+            text-align: center;
+            margin: 50px auto;
+            max-width: 400px;
+        }
+        #chat-container {
+            display: none;
+            max-width: 800px;
+            margin: 0 auto;
+        }
+        #messages {
+            height: 400px;
+            overflow-y: auto;
+            border: 1px solid #ccc;
+            padding: 10px;
+            margin-bottom: 10px;
+            background-color: #f9f9f9;
+        }
+        .message {
+            margin: 5px 0;
+            padding: 8px;
+            border-radius: 5px;
+            background-color: white;
+        }
+        .message .username {
+            font-weight: bold;
+            color: #4CAF50;
+        }
+        .message .timestamp {
+            font-size: 0.8em;
+            color: #666;
+            margin-left: 5px;
+        }
+        .system-message {
+            color: #666;
+            font-style: italic;
+            text-align: center;
+            margin: 5px 0;
+            padding: 5px;
+            background-color: #f0f0f0;
+            border-radius: 5px;
+        }
+        .system-message.error {
+            color: #d32f2f;
+            background-color: #ffebee;
+        }
+        #form {
+            display: flex;
+            gap: 10px;
+        }
+        #input {
+            flex-grow: 1;
+            padding: 8px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+        }
+        button {
+            padding: 8px 16px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            cursor: pointer;
+            border-radius: 4px;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+        #username-form {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+        .form-group {
+            display: flex;
+            gap: 10px;
+        }
+        #username-input, #password-input {
+            padding: 8px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            width: 200px;
+        }
+        .error-message {
+            color: red;
+            margin-top: 10px;
+            display: none;
+        }
+        .loading {
+            text-align: center;
+            color: #666;
+            padding: 10px;
+        }
+        .admin-link {
+            display: block;
+            text-align: center;
+            margin-top: 20px;
+            color: #666;
+            text-decoration: none;
+        }
+        .admin-link:hover {
+            color: #333;
+        }
+    </style>
+</head>
+<body>
+    <div id="login-container">
+        <h1>Welcome to Chat</h1>
+        <form id="username-form">
+            <div class="form-group">
+                <input id="username-input" type="text" placeholder="Enter username" required />
+                <input id="password-input" type="password" placeholder="Enter password" required />
+            </div>
+            <button type="submit">Join Chat</button>
+        </form>
+        <div id="username-error" class="error-message">Please enter valid credentials</div>
+        <a href="/admin" class="admin-link">Admin Panel</a>
+    </div>
+
+    <div id="chat-container">
+        <h1>Socket.IO Chat</h1>
+        <div id="messages">
+            <div class="loading">Loading previous messages...</div>
+        </div>
+        <form id="form">
+            <input id="input" autocomplete="off" placeholder="Type a message..." />
+            <button type="submit">Send</button>
+        </form>
+    </div>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script>
+        const socket = io();
+        const loginContainer = document.getElementById('login-container');
+        const chatContainer = document.getElementById('chat-container');
+        const usernameForm = document.getElementById('username-form');
+        const usernameInput = document.getElementById('username-input');
+        const passwordInput = document.getElementById('password-input');
+        const usernameError = document.getElementById('username-error');
+        const form = document.getElementById('form');
+        const input = document.getElementById('input');
+        const messages = document.getElementById('messages');
+
+        // Format timestamp
+        function formatTimestamp(timestamp) {
+            const date = new Date(timestamp);
+            return date.toLocaleTimeString();
+        }
+
+        // Add message to chat
+        function addMessage(data) {
+            const item = document.createElement('div');
+            item.className = 'message';
+            item.innerHTML = `
+                <span class="username">${data.username}:</span>
+                <span class="message-text">${data.message}</span>
+                <span class="timestamp">${formatTimestamp(data.timestamp)}</span>
+            `;
+            messages.appendChild(item);
+            messages.scrollTop = messages.scrollHeight;
+        }
+
+        // Add system message
+        function addSystemMessage(message, isError = false) {
+            const item = document.createElement('div');
+            item.className = `system-message ${isError ? 'error' : ''}`;
+            item.textContent = message;
+            messages.appendChild(item);
+            messages.scrollTop = messages.scrollHeight;
+        }
+
+        // Handle forced logout
+        function handleLogout(message) {
+            chatContainer.style.display = 'none';
+            loginContainer.style.display = 'block';
+            usernameError.textContent = message;
+            usernameError.style.display = 'block';
+            usernameInput.value = '';
+            passwordInput.value = '';
+            usernameInput.focus();
+        }
+
+        // Handle username submission
+        usernameForm.addEventListener('submit', (e) => {
+            e.preventDefault();
+            const username = usernameInput.value.trim();
+            const password = passwordInput.value.trim();
+
+            if (username && password) {
+                socket.emit('verify user', { username, password });
+            } else {
+                usernameError.style.display = 'block';
+            }
+        });
+
+        // Handle authentication error
+        socket.on('auth error', (error) => {
+            usernameError.textContent = error;
+            usernameError.style.display = 'block';
+        });
+
+        // Handle forced logout
+        socket.on('force logout', (message) => {
+            handleLogout(message);
+        });
+
+        // Handle successful authentication
+        socket.on('user joined', (username) => {
+            if (username === usernameInput.value.trim()) {
+                loginContainer.style.display = 'none';
+                chatContainer.style.display = 'block';
+                input.focus();
+            } else {
+                addSystemMessage(`${username} joined the chat`);
+            }
+        });
+
+        // Handle chat message submission
+        form.addEventListener('submit', (e) => {
+            e.preventDefault();
+            const message = input.value.trim();
+            if (message) {
+                socket.emit('chat message', message);
+                input.value = '';
+            }
+        });
+
+        // Handle incoming chat messages
+        socket.on('chat message', (data) => {
+            if (data && data.username && data.message) {
+                addMessage(data);
+            }
+        });
+
+        // Handle loading previous messages
+        socket.on('load messages', (messages) => {
+            const loadingMessage = document.querySelector('.loading');
+            if (loadingMessage) {
+                loadingMessage.remove();
+            }
+            messages.forEach(message => addMessage(message));
+        });
+
+        // Handle user left notification
+        socket.on('user left', (username) => {
+            addSystemMessage(`${username} left the chat`);
+        });
+
+        // Handle errors
+        socket.on('error', (error) => {
+            console.error('Socket error:', error);
+            addSystemMessage(`Error: ${error}`, true);
+        });
+
+        // Handle disconnection
+        socket.on('disconnect', () => {
+            if (chatContainer.style.display !== 'none') {
+                handleLogout('You have been disconnected from the server');
+            }
+        });
+
+        // Focus username input on page load
+        usernameInput.focus();
+    </script>
+</body>
+</html> 
